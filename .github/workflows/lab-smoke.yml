@@ -47,11 +47,11 @@ jobs:
           git init -q -b main "$tmp/repo"
           git -C "$tmp/repo" config user.name "Selene Lab"
           git -C "$tmp/repo" config user.email "lab@example.invalid"
-          printf 'first\\n' > "$tmp/repo/data.txt"
+          printf 'first\n' > "$tmp/repo/data.txt"
           git -C "$tmp/repo" add data.txt
           git -C "$tmp/repo" commit -qm "first"
           first="$(git -C "$tmp/repo" rev-parse HEAD)"
-          printf 'second\\n' > "$tmp/repo/data.txt"
+          printf 'second\n' > "$tmp/repo/data.txt"
           git -C "$tmp/repo" commit -qam "second"
           second="$(git -C "$tmp/repo" rev-parse HEAD)"
           git -C "$tmp/repo" update-ref refs/heads/test-cas "$first"
@@ -64,11 +64,11 @@ jobs:
 
           echo "== OpenSSH ephemeral SSHSIG =="
           ssh-keygen -q -t ed25519 -N '' -f "$tmp/testkey"
-          printf 'selene-public-lab\\n' > "$tmp/message.txt"
+          printf 'selene-public-lab\n' > "$tmp/message.txt"
           ssh-keygen -Y sign -f "$tmp/testkey" -n file "$tmp/message.txt" >/dev/null 2>&1
-          printf 'selene %s\\n' "$(cat "$tmp/testkey.pub")" > "$tmp/allowed_signers"
+          printf 'selene %s\n' "$(cat "$tmp/testkey.pub")" > "$tmp/allowed_signers"
           ssh-keygen -Y verify -f "$tmp/allowed_signers" -I selene -n file -s "$tmp/message.txt.sig" < "$tmp/message.txt"
-          printf 'altered\\n' > "$tmp/altered.txt"
+          printf 'altered\n' > "$tmp/altered.txt"
           if ssh-keygen -Y verify -f "$tmp/allowed_signers" -I selene -n file -s "$tmp/message.txt.sig" < "$tmp/altered.txt" >/dev/null 2>&1; then
             echo "FAIL: tampered SSHSIG unexpectedly accepted"
             exit 1
