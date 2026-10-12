@@ -1,0 +1,78 @@
+name: Selene Public Lab - Smoke
+
+on:
+  workflow_dispatch: {}
+
+# No checkout, repository token privileges, secrets or external actions.
+permissions: {}
+
+jobs:
+  smoke:
+    name: Python, Git and OpenSSH lab
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Execute independent offline smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "== Selene Lab: runtime versions =="
+          python3 --version
+          git --version
+          ssh -V
+
+          echo "== Python stdlib tests =="
+          python3 - <<'PY'
+          import hashlib
+          import unittest
+
+          class SmokeTests(unittest.TestCase):
+              def test_sha256(self):
+                  self.assertEqual(
+                      hashlib.sha256(b"selene-lab").hexdigest(),
+                      "89f2a0f92b34d96935cc76cb2daf752f483b9be46107324fe58b86416b1645b6"
+                  )
+              def test_serialization(self):
+                  import json
+                  self.assertEqual(json.loads('{"mode":"lab"}')["mode"], "lab")
+
+          unittest.main(verbosity=2)
+          PY
+
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+
+          echo "== Disposable Git CAS test =="
+          git init -q -b main "$tmp/repo"
+          git -C "$tmp/repo" config user.name "Selene Lab"
+          git -C "$tmp/repo" config user.email "lab@example.invalid"
+          printf 'first\\n' > "$tmp/repo/data.txt"
+          git -C "$tmp/repo" add data.txt
+          git -C "$tmp/repo" commit -qm "first"
+          first="$(git -C "$tmp/repo" rev-parse HEAD)"
+          printf 'second\\n' > "$tmp/repo/data.txt"
+          git -C "$tmp/repo" commit -qam "second"
+          second="$(git -C "$tmp/repo" rev-parse HEAD)"
+          git -C "$tmp/repo" update-ref refs/heads/test-cas "$first"
+          git -C "$tmp/repo" update-ref refs/heads/test-cas "$second" "$first"
+          if git -C "$tmp/repo" update-ref refs/heads/test-cas "$first" "$first" >/dev/null 2>&1; then
+            echo "FAIL: stale compare-and-swap unexpectedly accepted"
+            exit 1
+          fi
+          echo "PASS: Git CAS stale write rejected"
+
+          echo "== OpenSSH ephemeral SSHSIG =="
+          ssh-keygen -q -t ed25519 -N '' -f "$tmp/testkey"
+          printf 'selene-public-lab\\n' > "$tmp/message.txt"
+          ssh-keygen -Y sign -f "$tmp/testkey" -n file "$tmp/message.txt" >/dev/null 2>&1
+          printf 'selene %s\\n' "$(cat "$tmp/testkey.pub")" > "$tmp/allowed_signers"
+          ssh-keygen -Y verify -f "$tmp/allowed_signers" -I selene -n file -s "$tmp/message.txt.sig" < "$tmp/message.txt"
+          printf 'altered\\n' > "$tmp/altered.txt"
+          if ssh-keygen -Y verify -f "$tmp/allowed_signers" -I selene -n file -s "$tmp/message.txt.sig" < "$tmp/altered.txt" >/dev/null 2>&1; then
+            echo "FAIL: tampered SSHSIG unexpectedly accepted"
+            exit 1
+          fi
+          echo "PASS: SSHSIG tampering rejected"
+
+          echo "SELENE LAB SMOKE: PASS"
